@@ -53,8 +53,10 @@ impl App for MyApp {
 
         // Away
         let mut vertices = Vec::new();
-        track_trace_away(&ctrlps, 0.1, 0.1, *Vector3::x_axis(), [1., 0., 0.], &mut vertices);
-        track_trace_away(&ctrlps, 0.1, 0.1, *Vector3::z_axis(), [0., 0.5, 1.], &mut vertices);
+        let res = 0.01;
+        let away = 0.5;
+        track_trace_away(&ctrlps, res, away, *Vector3::y_axis(), [1., 0., 0.], &mut vertices);
+        track_trace_away(&ctrlps, res, away, *-Vector3::y_axis(), [0., 0.5, 1.], &mut vertices);
         let indices: Vec<u16> = (0..vertices.len() as u16).collect();
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
