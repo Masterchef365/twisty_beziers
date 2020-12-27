@@ -41,7 +41,7 @@ impl App for MyApp {
 
         // Track
         let mut ctrlps = Vec::new();
-        let mut position = Point3::new(0., 2., 0.);
+        let mut position = Point3::new(0., 0., 0.);
         for _ in 0..10 {
             let next_pos = position + vect_rand(&mut rng);
             ctrlps.push(TrackControl {
@@ -68,15 +68,17 @@ impl App for MyApp {
         let mut vertices = Vec::new();
         let res = 0.01;
         let away = 0.5;
-        track_trace_away(&ctrlps, res, away, *Vector3::y_axis(), [1., 0., 0.], &mut vertices);
-        track_trace_away(&ctrlps, res, away, *-Vector3::y_axis(), [0., 0.5, 1.], &mut vertices);
+        track_trace_away(&ctrlps, res, away, *Vector3::x_axis(), [1., 0., 0.], &mut vertices);
+        track_trace_away(&ctrlps, res, away, *Vector3::y_axis(), [0., 1., 0.], &mut vertices);
+        track_trace_away(&ctrlps, res, away, *Vector3::z_axis(), [0., 0.5, 1.], &mut vertices);
         let indices: Vec<u16> = (0..vertices.len() as u16).collect();
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
+        let scale = 4.;
         let track_away = Object {
             mesh,
             material: lines,
-            transform: Matrix4::identity(),
+            transform: Matrix4::from_diagonal(&Vector4::new(scale, scale, scale, 1.)),
         };
 
         //let triangles = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Triangles)?;
