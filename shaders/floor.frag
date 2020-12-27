@@ -11,10 +11,14 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     vec2 st = fragColor.xz;
-    //bvec2 tile = greaterThan(fract(st * 3.), vec2(.5));
+
+    //bvec2 tile = greaterThan(fract(st * 6.), vec2(.5));
     //vec3 color = vec3(tile.x != tile.y);
-    //float v = st.y * 10. + abs(.5 - st.x);
-    //vec3 color = vec3(fract(v - anim * 10.) > .5);
-    vec3 color = vec3(1.);
+
+    float v = st.y * 10. + abs(.5 - st.x);
+    vec3 color = vec3(fract(v - anim * 10.) > .5);
+    
+    //outColor = vec4(vec2(st), 0., 1.0);
+
     outColor = vec4(color, 1.0);
 }

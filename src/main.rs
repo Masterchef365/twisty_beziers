@@ -61,13 +61,13 @@ impl App for MyApp {
         )?;
 
         // Path
-        let (vertices, indices) = track_tess_path(&ctrlps, 4, 3.0, 0.5, true);
+        let (vertices, mut indices) = track_tess_path(&ctrlps, 4, 3.0, 0.5);
+        double_side(&mut indices);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let path = Object {
             mesh,
-            //material: floor,
-            material: lines,
+            material: floor,
             transform: Matrix4::identity(),
         };
 
@@ -115,12 +115,19 @@ pub fn road_norm(sample: &TrackSample) -> Vector3<f32> {
     quat.transform_vector(&Vector3::z_axis())
 }
 
+pub fn double_side(indices: &mut Vec<u16>) {
+    for i in (0..indices.len()).step_by(3) {
+        indices.push(indices[i + 2]);
+        indices.push(indices[i + 1]);
+        indices.push(indices[i + 0]);
+    }
+}
+
 pub fn track_tess_path(
     segments: &[TrackControl],
     lanes: i32,
     width: f32,
     resolution: f32,
-    double_sided: bool,
 ) -> (Vec<Vertex>, Vec<u16>) {
     let mut vertices = Vec::new();
     let max_idx = segments.len() as f32;
@@ -133,9 +140,9 @@ pub fn track_tess_path(
         let v = sample.index / max_idx;
         let w = follower.i;
         for lane in -lanes..=lanes {
-            let n = (lane as f32 * width) / total_lanes as f32;
-            let pos = sample.position + normal * n;
-            vertices.push(Vertex::new(*pos.coords.as_ref(), [0., v, w]));
+            let u = lane as f32 / total_lanes as f32;
+            let pos = sample.position + normal * (u * width);
+            vertices.push(Vertex::new(*pos.coords.as_ref(), [(u + 0.5) / 2., v, w]));
         }
         total_rows += 1;
     }
@@ -145,10 +152,12 @@ pub fn track_tess_path(
     for row in 0..total_rows-1 {
         for col in 0..total_lanes-1 {
             let idx = row * total_lanes + col;
-            //indices.push(idx as u16);
-            //indices.push((idx + 1) as u16);
             indices.push(idx as u16);
+            indices.push((idx + 1) as u16);
             indices.push((idx + total_lanes) as u16);
+            indices.push((idx + total_lanes + 1) as u16);
+            indices.push((idx + total_lanes) as u16);
+            indices.push((idx + 1) as u16);
         }
     }
 
