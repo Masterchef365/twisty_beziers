@@ -61,12 +61,13 @@ impl App for MyApp {
         )?;
 
         // Path
-        let (vertices, indices) = track_tess_path(&ctrlps, 3.0, 0.5, true);
+        let (vertices, indices) = track_tess_path(&ctrlps, 4, 3.0, 0.5, true);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let path = Object {
             mesh,
-            material: floor,
+            //material: floor,
+            material: lines,
             transform: Matrix4::identity(),
         };
 
@@ -101,8 +102,8 @@ impl App for MyApp {
             base_transform * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
 
         Ok(FramePacket {
-            //base_transform: Matrix4::identity(),
-            base_transform: base_transform.try_inverse().unwrap(),
+            base_transform: Matrix4::identity(),
+            //base_transform: base_transform.try_inverse().unwrap(),
             //objects: vec![self.track, self.track_away, self.grid, self.cart, self.path],
             objects: vec![self.grid, self.cart, self.path],
         })
@@ -116,6 +117,7 @@ pub fn road_norm(sample: &TrackSample) -> Vector3<f32> {
 
 pub fn track_tess_path(
     segments: &[TrackControl],
+    lanes: i32,
     width: f32,
     resolution: f32,
     double_sided: bool,
@@ -123,25 +125,39 @@ pub fn track_tess_path(
     let mut vertices = Vec::new();
     let max_idx = segments.len() as f32;
     let mut follower = TrackFollower::new(segments, resolution);
+
+    let total_lanes = lanes * 2 + 1;
+    let mut total_rows = 0;
     while let Some(sample) = follower.next() {
         let normal = road_norm(&sample) * width;
-        let left = (sample.position - normal).coords;
         let v = sample.index / max_idx;
         let w = follower.i;
-        vertices.push(Vertex::new(*left.as_ref(), [0., v, w]));
-        let right = (sample.position + normal).coords;
-        vertices.push(Vertex::new(*right.as_ref(), [1., v, w]));
+        for lane in -lanes..=lanes {
+            let n = (lane as f32 * width) / total_lanes as f32;
+            let pos = sample.position + normal * n;
+            vertices.push(Vertex::new(*pos.coords.as_ref(), [0., v, w]));
+        }
+        total_rows += 1;
     }
 
+
     let mut indices = Vec::new();
-    for i in (2..vertices.len() as u16).step_by(2) {
-        indices.extend_from_slice(&[i - 2, i - 1, i]);
-        indices.extend_from_slice(&[i + 1, i, i - 1]);
-        if double_sided {
-            indices.extend_from_slice(&[i, i - 1, i - 2]);
-            indices.extend_from_slice(&[i - 1, i, i + 1]);
+    for row in 0..total_rows-1 {
+        for col in 0..total_lanes-1 {
+            let idx = row * total_lanes + col;
+            //indices.push(idx as u16);
+            //indices.push((idx + 1) as u16);
+            indices.push(idx as u16);
+            indices.push((idx + total_lanes) as u16);
         }
     }
+
+
+    //let mut indices = Vec::new();
+    //for i in (2..vertices.len() as u16).step_by(2) {
+        //indices.extend_from_slice(&[i - 2, i - 1, i]);
+        //indices.extend_from_slice(&[i + 1, i, i - 1]);
+    //}
 
     (vertices, indices)
 }
