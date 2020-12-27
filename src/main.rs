@@ -3,7 +3,9 @@ use klystron::{
     runtime_3d::{launch, App},
     DrawType, Engine, FramePacket, Object, Vertex, UNLIT_FRAG, UNLIT_VERT,
 };
-use nalgebra::{Matrix4, Point3, Vector3, Unit, UnitQuaternion, Vector4};
+use nalgebra::{Matrix4, Point3, Vector3, Vector4};
+mod track;
+use track::{TrackControl, TrackFollower};
 
 struct MyApp {
     grid: Object,
@@ -34,11 +36,12 @@ impl App for MyApp {
 
         // Track
         let ctrlps = vec![
-            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 1.),
-            TrackControl::new(Point3::new(1., 2., 3.), Vector3::new(2., -1., 1.), 0.),
+            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 0.),
+            TrackControl::new(Point3::new(1., 4., 9.), Vector3::new(2., -1., 1.), 0.),
         ];
 
-        let (vertices, indices) = track_trace(&ctrlps, 0.01, [0., 1., 0.]);
+        // Track trace
+        let (vertices, indices) = track_center_line(&ctrlps, 0.01, [0., 1., 0.]);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let track = Object {
@@ -48,7 +51,7 @@ impl App for MyApp {
         };
 
         // Away
-        let (vertices, indices) = track_trace_away(&ctrlps, 0.01, 0.1, [1., 0., 0.]);
+        let (vertices, indices) = track_trace_away(&ctrlps, 0.1, 1.0, [1., 0., 0.]);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let track_away = Object {
@@ -86,10 +89,10 @@ impl App for MyApp {
             self.time = 0.
         }
 
-        let pos = track_spline(&self.ctrlps[0], &self.ctrlps[1], self.time);
-        let quat = track_quat(&self.ctrlps[0], &self.ctrlps[1], self.time);
+        let sample = track::sample_collection(&self.ctrlps, self.time).unwrap();
+        let quat = sample.quaternion(&Vector3::x_axis());
         let size = 0.08;
-        self.cart.transform = Matrix4::new_translation(&pos.coords)
+        self.cart.transform = Matrix4::new_translation(&sample.position.coords)
             * quat.to_homogeneous()
             * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
 
@@ -99,97 +102,17 @@ impl App for MyApp {
     }
 }
 
-pub struct TrackControl {
-    pub position: Point3<f32>,
-    pub direction: Vector3<f32>,
-    pub angle: f32,
-}
 
-impl TrackControl {
-    /// Create a new TrackControl
-    pub fn new(position: Point3<f32>, direction: Vector3<f32>, angle: f32) -> Self {
-        Self {
-            position,
-            direction,
-            angle,
-        }
-    }
-
-    /// The control point in front of this track control
-    pub fn front_ctrlp(&self) -> Point3<f32> {
-        self.position + self.direction
-    }
-
-    /// The control point behind this track control
-    pub fn back_ctrlp(&self) -> Point3<f32> {
-        self.position - self.direction
-    }
-}
-
-pub fn track_spline_deriv(begin: &TrackControl, end: &TrackControl, i: f32) -> Vector3<f32> {
-    let iv = 1. - i; // i inverse
-    let p0 = begin.position.coords;
-    let p1 = begin.front_ctrlp().coords;
-    let p2 = end.back_ctrlp().coords;
-    let p3 = end.position.coords;
-    (3. * iv.powf(2.) * (p1 - p0))
-        + (6. * iv * i * (p2 - p1))
-        + (3. * i.powf(2.) * (p3 - p2))
-}
-
-pub fn track_spline(
-    begin: &TrackControl,
-    end: &TrackControl,
-    i: f32,
-) -> Point3<f32> {
-    let iv = 1. - i; // i inverse
-    let p0 = begin.position.coords;
-    let p1 = begin.front_ctrlp().coords;
-    let p2 = end.back_ctrlp().coords;
-    let p3 = end.position.coords;
-    let coords = (iv.powf(3.) * p0)
-        + (3. * iv.powf(2.) * i * p1)
-        + (3. * iv * i.powf(2.) * p2)
-        + (i.powf(3.) * p3);
-    Point3 { coords }
-}
-
-fn lerp(a: f32, b: f32, i: f32) -> f32 {
-    a * (1. - i) + b * i
-}
-
-pub fn track_quat(begin: &TrackControl, end: &TrackControl, i: f32) -> UnitQuaternion<f32> {
-    let deriv = track_spline_deriv(begin, end, i);
-    let angle = lerp(begin.angle, end.angle, i);
-    //UnitQuaternion::from_axis_angle(&Unit::new_normalize(deriv), angle)
-    UnitQuaternion::rotation_between(&Vector3::y_axis(), &deriv).unwrap()
-}
-
-pub fn track_trace(
+pub fn track_center_line(
     segments: &[TrackControl],
     resolution: f32,
     color: [f32; 3],
 ) -> (Vec<Vertex>, Vec<u16>) {
-    let mut vertices = Vec::new();
-    let mut indices = Vec::new();
-    let mut push_point = |a: Point3<f32>| {
-        vertices.push(Vertex {
-            pos: *a.coords.as_ref(),
-            color,
-        });
-        indices.push(indices.len() as _);
-    };
-
-    for pair in segments.windows(2) {
-        let (begin, end) = (&pair[0], &pair[1]);
-        let mut i = 0.;
-        while i < 1. {
-            push_point(track_spline(begin, end, i));
-            i += resolution;
-            push_point(track_spline(begin, end, i));
-        }
-    }
-
+    let vertices: Vec<Vertex> = 
+        TrackFollower::new(segments, resolution)
+        .map(|s| Vertex::new(*s.position.coords.as_ref(), color))
+        .collect();
+    let indices = (1..vertices.len() as u16 * 2).map(|i| i / 2).collect();
     (vertices, indices)
 }
 
@@ -200,31 +123,15 @@ pub fn track_trace_away(
     color: [f32; 3],
 ) -> (Vec<Vertex>, Vec<u16>) {
     let mut vertices = Vec::new();
-    let mut indices = Vec::new();
-    let mut push_point = |a: Point3<f32>| {
-        vertices.push(Vertex {
-            pos: *a.coords.as_ref(),
-            color,
-        });
-        indices.push(indices.len() as _);
-    };
-
-    for pair in segments.windows(2) {
-        let (begin, end) = (&pair[0], &pair[1]);
-        let mut i = 0.;
-        while i < 1. {
-            push_point(track_spline(begin, end, i));
-            let quat = track_quat(begin, end, i);
-            let v = quat.transform_vector(&Vector3::x_axis()) * away;
-            push_point(track_spline(begin, end, i) + v);
-            i += resolution;
-        }
+    for s in TrackFollower::new(segments, resolution) {
+        vertices.push(Vertex::new(*s.position.coords.as_ref(), color));
+        let quat = s.quaternion(&Vector3::y_axis());
+        let v = s.position + quat.transform_vector(&Vector3::x_axis()) * away;
+        vertices.push(Vertex::new(*v.coords.as_ref(), color));
     }
-
+    let indices = (0..vertices.len() as u16).collect();
     (vertices, indices)
 }
-
-
 
 fn main() -> Result<()> {
     let vr = std::env::args().skip(1).next().is_some();
