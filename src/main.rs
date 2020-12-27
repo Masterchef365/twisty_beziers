@@ -114,7 +114,7 @@ impl App for MyApp {
 
     fn next_frame(&mut self, engine: &mut dyn Engine) -> Result<FramePacket> {
         engine.update_time_value(self.time)?;
-        self.time += 0.0005;
+        self.time += 0.005;
 
         let sample = match track::sample_collection(&self.ctrlps, self.time) {
             Some(s) => s,
@@ -125,7 +125,7 @@ impl App for MyApp {
         };
         let quat = sample.quaternion(&Vector3::z_axis());
 
-        let cart_position = sample.position + road_norm(&sample) * (self.time * 100.).cos();
+        let cart_position = sample.position + road_norm(&sample);
         let base_transform = 
             Matrix4::new_translation(&cart_position.coords) * quat.to_homogeneous();
 
@@ -134,8 +134,8 @@ impl App for MyApp {
             base_transform * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
 
         Ok(FramePacket {
-            base_transform: Matrix4::identity(),
-            //base_transform: base_transform.try_inverse().unwrap(),
+            //base_transform: Matrix4::identity(),
+            base_transform: base_transform.try_inverse().unwrap(),
             //objects: vec![self.track, self.track_away, self.grid, self.cart, self.path],
             objects: vec![self.grid, self.cart, self.path],
         })
