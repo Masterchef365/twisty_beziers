@@ -3,7 +3,7 @@ use klystron::{
     runtime_3d::{launch, App},
     DrawType, Engine, FramePacket, Object, Vertex, UNLIT_FRAG, UNLIT_VERT,
 };
-use nalgebra::{Matrix4, Point3, Vector3};
+use nalgebra::{Matrix4, Point3, Vector3, Unit, UnitQuaternion};
 
 struct MyApp {
     grid: Object,
@@ -63,14 +63,16 @@ impl App for MyApp {
 pub struct TrackControl {
     pub position: Point3<f32>,
     pub direction: Vector3<f32>,
+    pub angle: f32,
 }
 
 impl TrackControl {
     /// Create a new TrackControl
-    pub fn new(position: Point3<f32>, direction: Vector3<f32>) -> Self {
+    pub fn new(position: Point3<f32>, direction: Vector3<f32>, angle: f32) -> Self {
         Self {
             position,
             direction,
+            angle,
         }
     }
 
@@ -85,6 +87,17 @@ impl TrackControl {
     }
 }
 
+pub fn track_spline_deriv(begin: &TrackControl, end: &TrackControl, i: f32) -> Vector3<f32> {
+    let iv = 1. - i; // i inverse
+    let p0 = begin.position.coords;
+    let p1 = begin.front_ctrlp().coords;
+    let p2 = end.back_ctrlp().coords;
+    let p3 = end.position.coords;
+    (3. * iv.powf(2.) * (p1 - p0))
+        + (6. * iv * i * (p2 - p1))
+        + (3. * i.powf(2.) * (p3 - p2))
+}
+
 pub fn track_spline(begin: &TrackControl, end: &TrackControl, i: f32) -> Point3<f32> {
     let iv = 1. - i; // i inverse
     let p0 = begin.position.coords;
@@ -96,6 +109,16 @@ pub fn track_spline(begin: &TrackControl, end: &TrackControl, i: f32) -> Point3<
         + (3. * iv * i.powf(2.) * p2)
         + (i.powf(3.) * p3);
     Point3 { coords }
+}
+
+fn lerp(a: f32, b: f32, i: f32) -> f32 {
+    a * (1. - i) + b * i
+}
+
+pub fn track_quat(begin: &TrackControl, end: &TrackControl, i: f32) -> UnitQuaternion<f32> {
+    let deriv = track_spline_deriv(begin, end, i);
+    let angle = lerp(begin.angle, end.angle, i);
+    UnitQuaternion::from_axis_angle(&Unit::new_normalize(deriv), angle)
 }
 
 pub fn track_trace(segments: &[TrackControl], resolution: f32, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
@@ -143,3 +166,4 @@ fn grid(size: i32, scale: f32, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
 
     (vertices, indices)
 }
+
