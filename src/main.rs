@@ -26,7 +26,7 @@ impl App for MyApp {
         let lines = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Lines)?;
 
         // Grid
-        let (vertices, indices) = grid(10, 1., [0.3; 3]);
+        let (vertices, indices) = grid(100, 1., [0.3; 3]);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let grid = Object {
@@ -114,7 +114,7 @@ impl App for MyApp {
 
     fn next_frame(&mut self, engine: &mut dyn Engine) -> Result<FramePacket> {
         engine.update_time_value(self.time)?;
-        self.time += 0.005;
+        self.time += 0.0003;
 
         let sample = match track::sample_collection(&self.ctrlps, self.time) {
             Some(s) => s,
@@ -123,7 +123,7 @@ impl App for MyApp {
                 track::sample_collection(&self.ctrlps, self.time).unwrap()
             }
         };
-        let quat = sample.quaternion(&Vector3::z_axis());
+        let quat = sample.quaternion(&Vector3::x_axis());
 
         let cart_position = sample.position + road_norm(&sample);
         let base_transform = 
