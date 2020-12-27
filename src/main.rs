@@ -39,7 +39,7 @@ impl App for MyApp {
         let ctrlps = vec![
             TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 0.),
             TrackControl::new(Point3::new(1., 4., 3.), Vector3::new(2., -1., 1.), -10.),
-            TrackControl::new(Point3::new(-1., 2., 2.), Vector3::new(2., -1., 1.), -1.),
+            TrackControl::new(Point3::new(-1., 2., 2.), Vector3::new(2., -1., 1.), -20.),
         ];
 
         // Track trace
@@ -78,7 +78,7 @@ impl App for MyApp {
         };
 
         // Path
-        let (vertices, indices) = track_tess_path(&ctrlps, 0.5, 0.01);
+        let (vertices, indices) = track_tess_path(&ctrlps, 0.5, 0.01, true);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let path = Object {
@@ -128,6 +128,7 @@ pub fn track_tess_path(
     segments: &[TrackControl],
     width: f32,
     resolution: f32,
+    double_sided: bool,
 ) -> (Vec<Vertex>, Vec<u16>) {
     let mut vertices = Vec::new();
     let max_idx = segments.len() as f32;
@@ -145,6 +146,10 @@ pub fn track_tess_path(
     for i in (2..vertices.len() as u16).step_by(2) {
         indices.extend_from_slice(&[i, i - 1, i - 2]);
         indices.extend_from_slice(&[i - 1, i, i + 1]);
+        if double_sided {
+            indices.extend_from_slice(&[i - 2, i - 1, i]);
+            indices.extend_from_slice(&[i + 1, i, i - 1]);
+        }
     }
 
     (vertices, indices)

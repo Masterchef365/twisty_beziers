@@ -62,7 +62,9 @@ pub fn sample_collection(controls: &[TrackControl], i: f32) -> Option<TrackSampl
     let base: usize = (i as i64).try_into().ok()?;
     let begin = controls.get(base)?;
     let end = controls.get(base+1)?;
-    Some(sample(begin, end, i.fract()))
+    let mut sample = sample(begin, end, i.fract());
+    sample.index = i;
+    Some(sample)
 }
 
 /// Derivative between two track controls
