@@ -5,7 +5,7 @@ use klystron::{
 };
 use nalgebra::{Matrix4, Point3, Vector3, Vector4};
 mod track;
-use track::{TrackControl, TrackFollower};
+use track::{TrackControl, TrackFollower, TrackSample};
 
 struct MyApp {
     grid: Object,
@@ -37,9 +37,9 @@ impl App for MyApp {
 
         // Track
         let ctrlps = vec![
-            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 0.),
-            TrackControl::new(Point3::new(1., 4., 3.), Vector3::new(2., -1., 1.), -10.),
-            TrackControl::new(Point3::new(-1., 2., 2.), Vector3::new(2., -1., 1.), -20.),
+            TrackControl::new(Point3::new(0., 0., 0.), Vector3::new(10., 0., 0.), 0.),
+            TrackControl::new(Point3::new(20., 10., 0.), Vector3::new(10., 0., 0.), 0.),
+            TrackControl::new(Point3::new(40., 20., 0.), Vector3::new(10., 0., 0.), std::f32::consts::PI),
         ];
 
         // Track trace
@@ -54,8 +54,22 @@ impl App for MyApp {
 
         // Away
         let mut vertices = Vec::new();
-        track_trace_away(&ctrlps, 0.1, 0.1, *Vector3::x_axis(), [1., 0., 0.], &mut vertices);
-        track_trace_away(&ctrlps, 0.1, 0.1, *Vector3::z_axis(), [0., 0.5, 1.], &mut vertices);
+        track_trace_away(
+            &ctrlps,
+            0.1,
+            0.1,
+            *Vector3::x_axis(),
+            [1., 0., 0.],
+            &mut vertices,
+        );
+        track_trace_away(
+            &ctrlps,
+            0.1,
+            0.1,
+            *Vector3::z_axis(),
+            [0., 0.5, 1.],
+            &mut vertices,
+        );
         let indices: Vec<u16> = (0..vertices.len() as u16).collect();
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
@@ -78,7 +92,7 @@ impl App for MyApp {
         };
 
         // Path
-        let (vertices, indices) = track_tess_path(&ctrlps, 0.5, 0.01, true);
+        let (vertices, indices) = track_tess_path(&ctrlps, 3.0, 0.5, false);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let path = Object {
@@ -86,7 +100,6 @@ impl App for MyApp {
             material: triangles,
             transform: Matrix4::identity(),
         };
-
 
         Ok(Self {
             path,
@@ -101,7 +114,7 @@ impl App for MyApp {
 
     fn next_frame(&mut self, engine: &mut dyn Engine) -> Result<FramePacket> {
         engine.update_time_value(self.time)?;
-        self.time += 0.005;
+        self.time += 0.0005;
 
         let sample = match track::sample_collection(&self.ctrlps, self.time) {
             Some(s) => s,
@@ -110,19 +123,29 @@ impl App for MyApp {
                 track::sample_collection(&self.ctrlps, self.time).unwrap()
             }
         };
-        let quat = sample.quaternion(&Vector3::y_axis());
+        let quat = sample.quaternion(&Vector3::z_axis());
+
+        let cart_position = sample.position + road_norm(&sample) * (self.time * 100.).cos();
+        let base_transform = 
+            Matrix4::new_translation(&cart_position.coords) * quat.to_homogeneous();
+
         let size = 0.08;
-        self.cart.transform = Matrix4::new_translation(&sample.position.coords)
-            * quat.to_homogeneous()
-            * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
+        self.cart.transform =
+            base_transform * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
 
         Ok(FramePacket {
+            base_transform: Matrix4::identity(),
+            //base_transform: base_transform.try_inverse().unwrap(),
             //objects: vec![self.track, self.track_away, self.grid, self.cart, self.path],
             objects: vec![self.grid, self.cart, self.path],
         })
     }
 }
 
+pub fn road_norm(sample: &TrackSample) -> Vector3<f32> {
+    let quat = sample.quaternion(&Vector3::x_axis());
+    quat.transform_vector(&Vector3::z_axis())
+}
 
 pub fn track_tess_path(
     segments: &[TrackControl],
@@ -133,8 +156,7 @@ pub fn track_tess_path(
     let mut vertices = Vec::new();
     let max_idx = segments.len() as f32;
     for sample in TrackFollower::new(segments, resolution) {
-        let quat = sample.quaternion(&Vector3::y_axis());
-        let normal = quat.transform_vector(&Vector3::x_axis()) * width;
+        let normal = road_norm(&sample) * width;
         let left = (sample.position - normal).coords;
         let v = sample.index / max_idx;
         vertices.push(Vertex::new(*left.as_ref(), [0., v, 0.]));
@@ -144,25 +166,23 @@ pub fn track_tess_path(
 
     let mut indices = Vec::new();
     for i in (2..vertices.len() as u16).step_by(2) {
-        indices.extend_from_slice(&[i, i - 1, i - 2]);
-        indices.extend_from_slice(&[i - 1, i, i + 1]);
+        indices.extend_from_slice(&[i - 2, i - 1, i]);
+        indices.extend_from_slice(&[i + 1, i, i - 1]);
         if double_sided {
-            indices.extend_from_slice(&[i - 2, i - 1, i]);
-            indices.extend_from_slice(&[i + 1, i, i - 1]);
+            indices.extend_from_slice(&[i, i - 1, i - 2]);
+            indices.extend_from_slice(&[i - 1, i, i + 1]);
         }
     }
 
     (vertices, indices)
 }
 
-
 pub fn track_center_line(
     segments: &[TrackControl],
     resolution: f32,
     color: [f32; 3],
 ) -> (Vec<Vertex>, Vec<u16>) {
-    let vertices: Vec<Vertex> = 
-        TrackFollower::new(segments, resolution)
+    let vertices: Vec<Vertex> = TrackFollower::new(segments, resolution)
         .map(|s| Vertex::new(*s.position.coords.as_ref(), color))
         .collect();
     let indices = (1..vertices.len() as u16 * 2).map(|i| i / 2).collect();
