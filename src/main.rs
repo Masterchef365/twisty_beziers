@@ -40,6 +40,9 @@ impl App for MyApp {
             TrackControl::new(Point3::new(0., 0., 0.), Vector3::new(10., 0., 0.), 0.),
             TrackControl::new(Point3::new(20., 10., 0.), Vector3::new(10., 0., 0.), 0.),
             TrackControl::new(Point3::new(40., 20., 0.), Vector3::new(10., 0., 0.), std::f32::consts::PI),
+            TrackControl::new(Point3::new(60., 00., 0.), Vector3::new(0., -10., 0.), std::f32::consts::PI),
+            TrackControl::new(Point3::new(00., -20., 0.), Vector3::new(-10., 0., 0.), std::f32::consts::PI),
+            TrackControl::new(Point3::new(0., 0., 0.), Vector3::new(10., 0., 0.), 0.),
         ];
 
         // Track trace
@@ -91,13 +94,19 @@ impl App for MyApp {
             transform: Matrix4::identity(),
         };
 
+        let floor = engine.add_material(
+            UNLIT_VERT, 
+            &std::fs::read("./shaders/floor.frag.spv")?, 
+            DrawType::Triangles
+        )?;
+
         // Path
-        let (vertices, indices) = track_tess_path(&ctrlps, 3.0, 0.5, false);
+        let (vertices, indices) = track_tess_path(&ctrlps, 3.0, 0.5, true);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let path = Object {
             mesh,
-            material: triangles,
+            material: floor,
             transform: Matrix4::identity(),
         };
 
@@ -114,7 +123,7 @@ impl App for MyApp {
 
     fn next_frame(&mut self, engine: &mut dyn Engine) -> Result<FramePacket> {
         engine.update_time_value(self.time)?;
-        self.time += 0.0003;
+        self.time += 0.003;
 
         let sample = match track::sample_collection(&self.ctrlps, self.time) {
             Some(s) => s,
@@ -125,7 +134,7 @@ impl App for MyApp {
         };
         let quat = sample.quaternion(&Vector3::x_axis());
 
-        let cart_position = sample.position + road_norm(&sample);
+        let cart_position = sample.position;// + road_norm(&sample);
         let base_transform = 
             Matrix4::new_translation(&cart_position.coords) * quat.to_homogeneous();
 
