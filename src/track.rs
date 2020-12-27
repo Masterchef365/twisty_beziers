@@ -1,4 +1,4 @@
-use nalgebra::{Point3, Vector3, UnitQuaternion};
+use nalgebra::{Point3, Vector3, UnitQuaternion, Unit};
 
 /// Control point for a track
 pub struct TrackControl {
@@ -33,10 +33,12 @@ pub struct TrackSample {
     pub position: Point3<f32>,
     pub derivative: Vector3<f32>,
     pub angle: f32,
+    pub index: f32,
 }
 
 impl TrackSample {
     pub fn quaternion(&self, axis: &Vector3<f32>) -> UnitQuaternion<f32> {
+        UnitQuaternion::from_axis_angle(&Unit::new_normalize(self.derivative), self.angle) *
         UnitQuaternion::rotation_between(axis, &self.derivative).unwrap()
     }
 }
@@ -49,7 +51,8 @@ pub fn sample(begin: &TrackControl, end: &TrackControl, i: f32) -> TrackSample {
     TrackSample {
         position,
         derivative,
-        angle
+        angle,
+        index: i,
     }
 }
 

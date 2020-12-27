@@ -12,6 +12,7 @@ struct MyApp {
     track: Object,
     cart: Object,
     track_away: Object,
+    path: Object,
     ctrlps: Vec<TrackControl>,
     time: f32,
 }
@@ -36,9 +37,9 @@ impl App for MyApp {
 
         // Track
         let ctrlps = vec![
-            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 1.),
-            TrackControl::new(Point3::new(1., 4., 3.), Vector3::new(2., -1., 1.), 0.),
-            TrackControl::new(Point3::new(-1., 2., 2.), Vector3::new(2., -1., 1.), 1.),
+            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 0.),
+            TrackControl::new(Point3::new(1., 4., 3.), Vector3::new(2., -1., 1.), -10.),
+            TrackControl::new(Point3::new(-1., 2., 2.), Vector3::new(2., -1., 1.), -1.),
         ];
 
         // Track trace
@@ -76,7 +77,19 @@ impl App for MyApp {
             transform: Matrix4::identity(),
         };
 
+        // Path
+        let (vertices, indices) = track_tess_path(&ctrlps, 0.5, 0.01);
+        let mesh = engine.add_mesh(&vertices, &indices)?;
+
+        let path = Object {
+            mesh,
+            material: triangles,
+            transform: Matrix4::identity(),
+        };
+
+
         Ok(Self {
+            path,
             ctrlps,
             cart,
             track_away,
@@ -104,9 +117,37 @@ impl App for MyApp {
             * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
 
         Ok(FramePacket {
-            objects: vec![self.track, self.track_away, self.grid, self.cart],
+            //objects: vec![self.track, self.track_away, self.grid, self.cart, self.path],
+            objects: vec![self.grid, self.cart, self.path],
         })
     }
+}
+
+
+pub fn track_tess_path(
+    segments: &[TrackControl],
+    width: f32,
+    resolution: f32,
+) -> (Vec<Vertex>, Vec<u16>) {
+    let mut vertices = Vec::new();
+    let max_idx = segments.len() as f32;
+    for sample in TrackFollower::new(segments, resolution) {
+        let quat = sample.quaternion(&Vector3::y_axis());
+        let normal = quat.transform_vector(&Vector3::x_axis()) * width;
+        let left = (sample.position - normal).coords;
+        let v = sample.index / max_idx;
+        vertices.push(Vertex::new(*left.as_ref(), [0., v, 0.]));
+        let right = (sample.position + normal).coords;
+        vertices.push(Vertex::new(*right.as_ref(), [1., v, 0.]));
+    }
+
+    let mut indices = Vec::new();
+    for i in (2..vertices.len() as u16).step_by(2) {
+        indices.extend_from_slice(&[i, i - 1, i - 2]);
+        indices.extend_from_slice(&[i - 1, i, i + 1]);
+    }
+
+    (vertices, indices)
 }
 
 
