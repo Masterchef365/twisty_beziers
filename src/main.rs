@@ -6,11 +6,11 @@ use klystron::{
 use nalgebra::{Matrix4, Point3, Vector3, Vector4};
 mod track;
 use track::{TrackControl, TrackFollower};
+use rand::distributions::{Uniform, Distribution};
 
 struct MyApp {
     grid: Object,
-    track: Object,
-    cart: Object,
+    //track: Object,
     track_away: Object,
     ctrlps: Vec<TrackControl>,
     time: f32,
@@ -34,14 +34,26 @@ impl App for MyApp {
             transform: Matrix4::identity(),
         };
 
+        let mut rng = rand::thread_rng();
+        let angle = Uniform::new(0., std::f32::consts::TAU);
+        let pos = Uniform::new(-1., 1.);
+        let vect_rand = |r: &mut rand::rngs::ThreadRng| Vector3::new(pos.sample(r), pos.sample(r), pos.sample(r));
+
         // Track
-        let ctrlps = vec![
-            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 1.),
-            TrackControl::new(Point3::new(1., 4., 3.), Vector3::new(2., -1., 1.), 0.),
-            TrackControl::new(Point3::new(-1., 2., 2.), Vector3::new(2., -1., 1.), 1.),
-        ];
+        let mut ctrlps = Vec::new();
+        let mut position = Point3::new(0., 2., 0.);
+        for _ in 0..10 {
+            let next_pos = position + vect_rand(&mut rng);
+            ctrlps.push(TrackControl {
+                position,
+                direction: vect_rand(&mut rng),
+                angle: angle.sample(&mut rng),
+            });
+            position = next_pos;
+        }
 
         // Track trace
+        /*
         let (vertices, indices) = track_center_line(&ctrlps, 0.01, [0., 1., 0.]);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
@@ -50,6 +62,7 @@ impl App for MyApp {
             material: lines,
             transform: Matrix4::identity(),
         };
+        */
 
         // Away
         let mut vertices = Vec::new();
@@ -66,23 +79,12 @@ impl App for MyApp {
             transform: Matrix4::identity(),
         };
 
-        let triangles = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Triangles)?;
-
-        // Cart
-        let (vertices, indices) = rainbow_cube();
-        let mesh = engine.add_mesh(&vertices, &indices)?;
-
-        let cart = Object {
-            mesh,
-            material: triangles,
-            transform: Matrix4::identity(),
-        };
+        //let triangles = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Triangles)?;
 
         Ok(Self {
             ctrlps,
-            cart,
             track_away,
-            track,
+            //track,
             grid,
             time: 0.0,
         })
@@ -91,22 +93,8 @@ impl App for MyApp {
     fn next_frame(&mut self, engine: &mut dyn Engine) -> Result<FramePacket> {
         engine.update_time_value(self.time)?;
         self.time += 0.005;
-
-        let sample = match track::sample_collection(&self.ctrlps, self.time) {
-            Some(s) => s,
-            None => {
-                self.time = 0.;
-                track::sample_collection(&self.ctrlps, self.time).unwrap()
-            }
-        };
-        let quat = sample.quaternion(&Vector3::y_axis());
-        let size = 0.08;
-        self.cart.transform = Matrix4::new_translation(&sample.position.coords)
-            * quat.to_homogeneous()
-            * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
-
         Ok(FramePacket {
-            objects: vec![self.track, self.track_away, self.grid, self.cart],
+            objects: vec![self.track_away, self.grid],
         })
     }
 }
