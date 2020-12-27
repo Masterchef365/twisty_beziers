@@ -51,7 +51,10 @@ impl App for MyApp {
         };
 
         // Away
-        let (vertices, indices) = track_trace_away(&ctrlps, 0.1, 1.0, [1., 0., 0.]);
+        let mut vertices = Vec::new();
+        track_trace_away(&ctrlps, 0.1, 1.0, *Vector3::x_axis(), [1., 0., 0.], &mut vertices);
+        track_trace_away(&ctrlps, 0.1, 1.0, *Vector3::z_axis(), [0., 0.5, 1.], &mut vertices);
+        let indices: Vec<u16> = (0..vertices.len() as u16).collect();
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let track_away = Object {
@@ -90,7 +93,7 @@ impl App for MyApp {
         }
 
         let sample = track::sample_collection(&self.ctrlps, self.time).unwrap();
-        let quat = sample.quaternion(&Vector3::x_axis());
+        let quat = sample.quaternion(&Vector3::y_axis());
         let size = 0.08;
         self.cart.transform = Matrix4::new_translation(&sample.position.coords)
             * quat.to_homogeneous()
@@ -120,17 +123,16 @@ pub fn track_trace_away(
     segments: &[TrackControl],
     resolution: f32,
     away: f32,
+    axis: Vector3<f32>,
     color: [f32; 3],
-) -> (Vec<Vertex>, Vec<u16>) {
-    let mut vertices = Vec::new();
+    vertices: &mut Vec<Vertex>,
+) {
     for s in TrackFollower::new(segments, resolution) {
         vertices.push(Vertex::new(*s.position.coords.as_ref(), color));
         let quat = s.quaternion(&Vector3::y_axis());
-        let v = s.position + quat.transform_vector(&Vector3::x_axis()) * away;
+        let v = s.position + quat.transform_vector(&axis) * away;
         vertices.push(Vertex::new(*v.coords.as_ref(), color));
     }
-    let indices = (0..vertices.len() as u16).collect();
-    (vertices, indices)
 }
 
 fn main() -> Result<()> {
