@@ -9,9 +9,7 @@ use track::{TrackControl, TrackFollower, TrackSample};
 
 struct MyApp {
     grid: Object,
-    track: Object,
     cart: Object,
-    track_away: Object,
     path: Object,
     ctrlps: Vec<TrackControl>,
     time: f32,
@@ -45,46 +43,8 @@ impl App for MyApp {
             TrackControl::new(Point3::new(0., 0., 0.), Vector3::new(10., 0., 0.), 0.),
         ];
 
-        // Track trace
-        let (vertices, indices) = track_center_line(&ctrlps, 0.01, [0., 1., 0.]);
-        let mesh = engine.add_mesh(&vertices, &indices)?;
-
-        let track = Object {
-            mesh,
-            material: lines,
-            transform: Matrix4::identity(),
-        };
-
-        // Away
-        let mut vertices = Vec::new();
-        track_trace_away(
-            &ctrlps,
-            0.1,
-            0.1,
-            *Vector3::x_axis(),
-            [1., 0., 0.],
-            &mut vertices,
-        );
-        track_trace_away(
-            &ctrlps,
-            0.1,
-            0.1,
-            *Vector3::z_axis(),
-            [0., 0.5, 1.],
-            &mut vertices,
-        );
-        let indices: Vec<u16> = (0..vertices.len() as u16).collect();
-        let mesh = engine.add_mesh(&vertices, &indices)?;
-
-        let track_away = Object {
-            mesh,
-            material: lines,
-            transform: Matrix4::identity(),
-        };
-
-        let triangles = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Triangles)?;
-
         // Cart
+        let triangles = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Triangles)?;
         let (vertices, indices) = rainbow_cube();
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
@@ -114,8 +74,6 @@ impl App for MyApp {
             path,
             ctrlps,
             cart,
-            track_away,
-            track,
             grid,
             time: 0.0,
         })
@@ -123,7 +81,6 @@ impl App for MyApp {
 
     fn next_frame(&mut self, engine: &mut dyn Engine) -> Result<FramePacket> {
         engine.update_time_value(self.time)?;
-        self.time += 0.003;
 
         let sample = match track::sample_collection(&self.ctrlps, self.time) {
             Some(s) => s,
@@ -132,6 +89,7 @@ impl App for MyApp {
                 track::sample_collection(&self.ctrlps, self.time).unwrap()
             }
         };
+        self.time += 0.1 / sample.derivative.magnitude();
         let quat = sample.quaternion(&Vector3::x_axis());
 
         let cart_position = sample.position;// + road_norm(&sample);
@@ -164,13 +122,15 @@ pub fn track_tess_path(
 ) -> (Vec<Vertex>, Vec<u16>) {
     let mut vertices = Vec::new();
     let max_idx = segments.len() as f32;
-    for sample in TrackFollower::new(segments, resolution) {
+    let mut follower = TrackFollower::new(segments, resolution);
+    while let Some(sample) = follower.next() {
         let normal = road_norm(&sample) * width;
         let left = (sample.position - normal).coords;
         let v = sample.index / max_idx;
-        vertices.push(Vertex::new(*left.as_ref(), [0., v, 0.]));
+        let w = follower.i;
+        vertices.push(Vertex::new(*left.as_ref(), [0., v, w]));
         let right = (sample.position + normal).coords;
-        vertices.push(Vertex::new(*right.as_ref(), [1., v, 0.]));
+        vertices.push(Vertex::new(*right.as_ref(), [1., v, w]));
     }
 
     let mut indices = Vec::new();

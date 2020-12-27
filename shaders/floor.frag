@@ -10,10 +10,10 @@ layout(binding = 1) uniform Animation {
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    vec2 st = fragColor.xy;
-    st.y *= 25.;
+    vec2 st = fragColor.xz;
     //bvec2 tile = greaterThan(fract(st * 2.), vec2(.5));
     //vec3 color = vec3(tile.x != tile.y);
-    vec3 color = vec3(fract(st.y + abs(.5 - st.x) - anim) > .5);
+    float v = st.y * 10. + abs(.5 - st.x);
+    vec3 color = vec3(fract(v - anim * 10.) > .5);
     outColor = vec4(color, 1.0);
 }
