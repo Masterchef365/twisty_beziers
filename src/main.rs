@@ -34,7 +34,7 @@ impl App for MyApp {
 
         // Track
         let ctrlps = vec![
-            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(0., 1., 0.), 1.),
+            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 1.),
             TrackControl::new(Point3::new(1., 2., 3.), Vector3::new(2., -1., 1.), 0.),
         ];
 
@@ -162,7 +162,7 @@ pub fn track_quat(begin: &TrackControl, end: &TrackControl, i: f32) -> UnitQuate
     let deriv = track_spline_deriv(begin, end, i);
     let angle = lerp(begin.angle, end.angle, i);
     //UnitQuaternion::from_axis_angle(&Unit::new_normalize(deriv), angle)
-    UnitQuaternion::rotation_between(&deriv, &Vector3::y_axis()).unwrap()
+    UnitQuaternion::rotation_between(&Vector3::y_axis(), &deriv).unwrap()
 }
 
 pub fn track_trace(
@@ -215,7 +215,7 @@ pub fn track_trace_away(
         while i < 1. {
             push_point(track_spline(begin, end, i));
             let quat = track_quat(begin, end, i);
-            let v = quat.transform_vector(&Vector3::y_axis()) * away;
+            let v = quat.transform_vector(&Vector3::x_axis()) * away;
             push_point(track_spline(begin, end, i) + v);
             i += resolution;
         }
