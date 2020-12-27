@@ -36,8 +36,9 @@ impl App for MyApp {
 
         // Track
         let ctrlps = vec![
-            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 0.),
-            TrackControl::new(Point3::new(1., 4., 9.), Vector3::new(2., -1., 1.), 0.),
+            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.), 1.),
+            TrackControl::new(Point3::new(1., 4., 3.), Vector3::new(2., -1., 1.), 0.),
+            TrackControl::new(Point3::new(-1., 2., 2.), Vector3::new(2., -1., 1.), 1.),
         ];
 
         // Track trace
@@ -52,8 +53,8 @@ impl App for MyApp {
 
         // Away
         let mut vertices = Vec::new();
-        track_trace_away(&ctrlps, 0.1, 1.0, *Vector3::x_axis(), [1., 0., 0.], &mut vertices);
-        track_trace_away(&ctrlps, 0.1, 1.0, *Vector3::z_axis(), [0., 0.5, 1.], &mut vertices);
+        track_trace_away(&ctrlps, 0.1, 0.1, *Vector3::x_axis(), [1., 0., 0.], &mut vertices);
+        track_trace_away(&ctrlps, 0.1, 0.1, *Vector3::z_axis(), [0., 0.5, 1.], &mut vertices);
         let indices: Vec<u16> = (0..vertices.len() as u16).collect();
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
@@ -87,12 +88,15 @@ impl App for MyApp {
 
     fn next_frame(&mut self, engine: &mut dyn Engine) -> Result<FramePacket> {
         engine.update_time_value(self.time)?;
-        self.time += 0.001;
-        if self.time > 1. {
-            self.time = 0.
-        }
+        self.time += 0.005;
 
-        let sample = track::sample_collection(&self.ctrlps, self.time).unwrap();
+        let sample = match track::sample_collection(&self.ctrlps, self.time) {
+            Some(s) => s,
+            None => {
+                self.time = 0.;
+                track::sample_collection(&self.ctrlps, self.time).unwrap()
+            }
+        };
         let quat = sample.quaternion(&Vector3::y_axis());
         let size = 0.08;
         self.cart.transform = Matrix4::new_translation(&sample.position.coords)
