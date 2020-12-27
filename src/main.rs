@@ -3,11 +3,14 @@ use klystron::{
     runtime_3d::{launch, App},
     DrawType, Engine, FramePacket, Object, Vertex, UNLIT_FRAG, UNLIT_VERT,
 };
-use nalgebra::{Matrix4, Point3, Vector3, Unit, UnitQuaternion};
+use nalgebra::{Matrix4, Point3, Vector3, Unit, UnitQuaternion, Vector4};
 
 struct MyApp {
     grid: Object,
     track: Object,
+    cart: Object,
+    track_away: Object,
+    ctrlps: Vec<TrackControl>,
     time: f32,
 }
 
@@ -17,7 +20,7 @@ impl App for MyApp {
     type Args = ();
 
     fn new(engine: &mut dyn Engine, _args: Self::Args) -> Result<Self> {
-        let material = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Lines)?;
+        let lines = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Lines)?;
 
         // Grid
         let (vertices, indices) = grid(10, 1., [0.3; 3]);
@@ -25,14 +28,14 @@ impl App for MyApp {
 
         let grid = Object {
             mesh,
-            material,
+            material: lines,
             transform: Matrix4::identity(),
         };
 
         // Track
         let ctrlps = vec![
-            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(1., 1., 1.)),
-            TrackControl::new(Point3::new(1., 2., 3.), Vector3::new(2., -1., 1.)),
+            TrackControl::new(Point3::new(0., 1., 0.), Vector3::new(0., 1., 0.), 1.),
+            TrackControl::new(Point3::new(1., 2., 3.), Vector3::new(2., -1., 1.), 0.),
         ];
 
         let (vertices, indices) = track_trace(&ctrlps, 0.01, [0., 1., 0.]);
@@ -40,11 +43,36 @@ impl App for MyApp {
 
         let track = Object {
             mesh,
-            material,
+            material: lines,
+            transform: Matrix4::identity(),
+        };
+
+        // Away
+        let (vertices, indices) = track_trace_away(&ctrlps, 0.01, 0.1, [1., 0., 0.]);
+        let mesh = engine.add_mesh(&vertices, &indices)?;
+
+        let track_away = Object {
+            mesh,
+            material: lines,
+            transform: Matrix4::identity(),
+        };
+
+        let triangles = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Triangles)?;
+
+        // Cart
+        let (vertices, indices) = rainbow_cube();
+        let mesh = engine.add_mesh(&vertices, &indices)?;
+
+        let cart = Object {
+            mesh,
+            material: triangles,
             transform: Matrix4::identity(),
         };
 
         Ok(Self {
+            ctrlps,
+            cart,
+            track_away,
             track,
             grid,
             time: 0.0,
@@ -53,9 +81,20 @@ impl App for MyApp {
 
     fn next_frame(&mut self, engine: &mut dyn Engine) -> Result<FramePacket> {
         engine.update_time_value(self.time)?;
-        self.time += 0.01;
+        self.time += 0.001;
+        if self.time > 1. {
+            self.time = 0.
+        }
+
+        let pos = track_spline(&self.ctrlps[0], &self.ctrlps[1], self.time);
+        let quat = track_quat(&self.ctrlps[0], &self.ctrlps[1], self.time);
+        let size = 0.08;
+        self.cart.transform = Matrix4::new_translation(&pos.coords)
+            * quat.to_homogeneous()
+            * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
+
         Ok(FramePacket {
-            objects: vec![self.track, self.grid],
+            objects: vec![self.track, self.track_away, self.grid, self.cart],
         })
     }
 }
@@ -98,7 +137,11 @@ pub fn track_spline_deriv(begin: &TrackControl, end: &TrackControl, i: f32) -> V
         + (3. * i.powf(2.) * (p3 - p2))
 }
 
-pub fn track_spline(begin: &TrackControl, end: &TrackControl, i: f32) -> Point3<f32> {
+pub fn track_spline(
+    begin: &TrackControl,
+    end: &TrackControl,
+    i: f32,
+) -> Point3<f32> {
     let iv = 1. - i; // i inverse
     let p0 = begin.position.coords;
     let p1 = begin.front_ctrlp().coords;
@@ -118,14 +161,22 @@ fn lerp(a: f32, b: f32, i: f32) -> f32 {
 pub fn track_quat(begin: &TrackControl, end: &TrackControl, i: f32) -> UnitQuaternion<f32> {
     let deriv = track_spline_deriv(begin, end, i);
     let angle = lerp(begin.angle, end.angle, i);
-    UnitQuaternion::from_axis_angle(&Unit::new_normalize(deriv), angle)
+    //UnitQuaternion::from_axis_angle(&Unit::new_normalize(deriv), angle)
+    UnitQuaternion::rotation_between(&deriv, &Vector3::y_axis()).unwrap()
 }
 
-pub fn track_trace(segments: &[TrackControl], resolution: f32, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
+pub fn track_trace(
+    segments: &[TrackControl],
+    resolution: f32,
+    color: [f32; 3],
+) -> (Vec<Vertex>, Vec<u16>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     let mut push_point = |a: Point3<f32>| {
-        vertices.push(Vertex { pos: *a.coords.as_ref(), color });
+        vertices.push(Vertex {
+            pos: *a.coords.as_ref(),
+            color,
+        });
         indices.push(indices.len() as _);
     };
 
@@ -141,6 +192,39 @@ pub fn track_trace(segments: &[TrackControl], resolution: f32, color: [f32; 3]) 
 
     (vertices, indices)
 }
+
+pub fn track_trace_away(
+    segments: &[TrackControl],
+    resolution: f32,
+    away: f32,
+    color: [f32; 3],
+) -> (Vec<Vertex>, Vec<u16>) {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+    let mut push_point = |a: Point3<f32>| {
+        vertices.push(Vertex {
+            pos: *a.coords.as_ref(),
+            color,
+        });
+        indices.push(indices.len() as _);
+    };
+
+    for pair in segments.windows(2) {
+        let (begin, end) = (&pair[0], &pair[1]);
+        let mut i = 0.;
+        while i < 1. {
+            push_point(track_spline(begin, end, i));
+            let quat = track_quat(begin, end, i);
+            let v = quat.transform_vector(&Vector3::y_axis()) * away;
+            push_point(track_spline(begin, end, i) + v);
+            i += resolution;
+        }
+    }
+
+    (vertices, indices)
+}
+
+
 
 fn main() -> Result<()> {
     let vr = std::env::args().skip(1).next().is_some();
@@ -167,3 +251,22 @@ fn grid(size: i32, scale: f32, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
     (vertices, indices)
 }
 
+fn rainbow_cube() -> (Vec<Vertex>, Vec<u16>) {
+    let vertices = vec![
+        Vertex::new([-1.0, -1.0, -1.0], [0.0, 1.0, 1.0]),
+        Vertex::new([1.0, -1.0, -1.0], [1.0, 0.0, 1.0]),
+        Vertex::new([1.0, 1.0, -1.0], [1.0, 1.0, 0.0]),
+        Vertex::new([-1.0, 1.0, -1.0], [0.0, 1.0, 1.0]),
+        Vertex::new([-1.0, -1.0, 1.0], [1.0, 0.0, 1.0]),
+        Vertex::new([1.0, -1.0, 1.0], [1.0, 1.0, 0.0]),
+        Vertex::new([1.0, 1.0, 1.0], [0.0, 1.0, 1.0]),
+        Vertex::new([-1.0, 1.0, 1.0], [1.0, 0.0, 1.0]),
+    ];
+
+    let indices = vec![
+        3, 1, 0, 2, 1, 3, 2, 5, 1, 6, 5, 2, 6, 4, 5, 7, 4, 6, 7, 0, 4, 3, 0, 7, 7, 2, 3, 6, 2, 7,
+        0, 5, 4, 1, 5, 0,
+    ];
+
+    (vertices, indices)
+}
