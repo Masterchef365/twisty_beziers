@@ -5,8 +5,8 @@ use klystron::{
 };
 use nalgebra::{Matrix4, Point3, Vector3, Vector4};
 mod track;
+use rand::distributions::{Distribution, Uniform};
 use track::{TrackControl, TrackFollower};
-use rand::distributions::{Uniform, Distribution};
 
 struct MyApp {
     grid: Object,
@@ -37,12 +37,14 @@ impl App for MyApp {
         let mut rng = rand::thread_rng();
         let angle = Uniform::new(0., std::f32::consts::TAU);
         let pos = Uniform::new(-1., 1.);
-        let vect_rand = |r: &mut rand::rngs::ThreadRng| Vector3::new(pos.sample(r), pos.sample(r), pos.sample(r));
+        let vect_rand = |r: &mut rand::rngs::ThreadRng| {
+            Vector3::new(pos.sample(r), pos.sample(r), pos.sample(r))
+        };
 
         // Track
         let mut ctrlps = Vec::new();
         let mut position = Point3::new(0., 0., 0.);
-        for _ in 0..10 {
+        for _ in 0..20 {
             let next_pos = position + vect_rand(&mut rng);
             ctrlps.push(TrackControl {
                 position,
@@ -67,18 +69,41 @@ impl App for MyApp {
         // Away
         let mut vertices = Vec::new();
         let res = 0.01;
-        let away = 0.5;
-        track_trace_away(&ctrlps, res, away, *Vector3::x_axis(), [1., 0., 0.], &mut vertices);
-        track_trace_away(&ctrlps, res, away, *Vector3::y_axis(), [0., 1., 0.], &mut vertices);
-        track_trace_away(&ctrlps, res, away, *Vector3::z_axis(), [0., 0.5, 1.], &mut vertices);
+        let away = 0.2;
+        track_trace_away(
+            &ctrlps,
+            res,
+            away,
+            *Vector3::x_axis(),
+            [1., 0., 0.],
+            &mut vertices,
+        );
+        track_trace_away(
+            &ctrlps,
+            res,
+            away,
+            *Vector3::y_axis(),
+            [0., 1., 0.],
+            &mut vertices,
+        );
+        track_trace_away(
+            &ctrlps,
+            res,
+            away,
+            *Vector3::z_axis(),
+            [0., 0.5, 1.],
+            &mut vertices,
+        );
         let indices: Vec<u16> = (0..vertices.len() as u16).collect();
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
-        let scale = 4.;
+        let scale = 1.5;
+        let floor = ctrlps_floor(&ctrlps).unwrap();
         let track_away = Object {
             mesh,
             material: lines,
-            transform: Matrix4::from_diagonal(&Vector4::new(scale, scale, scale, 1.)),
+            transform: Matrix4::from_diagonal(&Vector4::new(scale, scale, scale, 1.))
+                * Matrix4::new_translation(&Vector3::new(0., -floor, 0.)),
         };
 
         //let triangles = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Triangles)?;
@@ -101,14 +126,19 @@ impl App for MyApp {
     }
 }
 
+pub fn ctrlps_floor(ctrlps: &[TrackControl]) -> Option<f32> {
+    ctrlps
+        .iter()
+        .map(|c| c.position.y)
+        .min_by(|a, b| a.partial_cmp(&b).unwrap())
+}
 
 pub fn track_center_line(
     segments: &[TrackControl],
     resolution: f32,
     color: [f32; 3],
 ) -> (Vec<Vertex>, Vec<u16>) {
-    let vertices: Vec<Vertex> = 
-        TrackFollower::new(segments, resolution)
+    let vertices: Vec<Vertex> = TrackFollower::new(segments, resolution)
         .map(|s| Vertex::new(*s.position.coords.as_ref(), color))
         .collect();
     let indices = (1..vertices.len() as u16 * 2).map(|i| i / 2).collect();
