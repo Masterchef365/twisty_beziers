@@ -4,8 +4,7 @@ use klystron::{
     DrawType, Engine, FramePacket, Object, Vertex, UNLIT_FRAG, UNLIT_VERT,
 };
 use nalgebra::{Matrix4, Point3, Vector3, Vector4};
-mod track;
-use track::{TrackControl, TrackFollower, TrackSample};
+use twisty_beziers::track::{self, TrackControl, TrackFollower, TrackSample};
 
 struct MyApp {
     grid: Object,
