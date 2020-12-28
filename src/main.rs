@@ -5,6 +5,9 @@ use klystron::{
 };
 use nalgebra::{Matrix4, Point3, Vector3, Vector4};
 use twisty_beziers::track::{self, TrackControl, TrackFollower, TrackSample};
+use structopt::StructOpt;
+use twisty_beziers::controls::{TwoAxisControls, GamepadAxes};
+use wiiboard::WiiBoardRealtime;
 
 struct MyApp {
     grid: Object,
@@ -12,14 +15,24 @@ struct MyApp {
     path: Object,
     ctrlps: Vec<TrackControl>,
     time: f32,
+    controls: Box<dyn TwoAxisControls>,
+    x_position: f32,
+    opt: Opt,
 }
+
+const X_SENSITIVITY: f32 = 0.1;
 
 impl App for MyApp {
     const NAME: &'static str = "MyApp";
 
-    type Args = ();
+    type Args = Opt;
 
-    fn new(engine: &mut dyn Engine, _args: Self::Args) -> Result<Self> {
+    fn new(engine: &mut dyn Engine, opt: Self::Args) -> Result<Self> {
+        let controls: Box<dyn TwoAxisControls> = match opt.wii {
+            true => Box::new(WiiBoardRealtime::new(5, 5)),
+            false => Box::new(GamepadAxes::new()?),
+        };
+
         let lines = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Lines)?;
 
         // Grid
@@ -71,6 +84,9 @@ impl App for MyApp {
         };
 
         Ok(Self {
+            opt,
+            x_position: 0.,
+            controls,
             path,
             ctrlps,
             cart,
@@ -80,8 +96,7 @@ impl App for MyApp {
     }
 
     fn next_frame(&mut self, engine: &mut dyn Engine) -> Result<FramePacket> {
-        engine.update_time_value(self.time)?;
-
+        // Sample track position
         let sample = match track::sample_collection(&self.ctrlps, self.time) {
             Some(s) => s,
             None => {
@@ -89,21 +104,34 @@ impl App for MyApp {
                 track::sample_collection(&self.ctrlps, self.time).unwrap()
             }
         };
-        self.time += 0.1 / sample.derivative.magnitude();
-        let quat = sample.quaternion(&Vector3::x_axis());
 
-        let cart_position = sample.position;// + road_norm(&sample);
+        // Update X position based on game input
+        let (x, y) = self.controls.axes().expect("Input device error");
+        self.x_position += X_SENSITIVITY * x;
+
+        // Update time (It's actually an index into the spline set but shhh)
+        self.time += 0.1 / sample.derivative.magnitude();
+        engine.update_time_value(self.time)?;
+
+        // Determine transform for world
+        let quat = sample.quaternion(&Vector3::x_axis());
+        let cart_position = sample.position + road_norm(&sample) * self.x_position;
         let base_transform = 
             Matrix4::new_translation(&cart_position.coords) * quat.to_homogeneous();
 
+        // Move the cart
         let size = 0.08;
         self.cart.transform =
             base_transform * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
 
+        // Move the whole scene
+        let base_transform = match self.opt.motion {
+            false => Matrix4::identity(),
+            true => base_transform.try_inverse().unwrap(),
+        };
+
         Ok(FramePacket {
-            base_transform: Matrix4::identity(),
-            //base_transform: base_transform.try_inverse().unwrap(),
-            //objects: vec![self.track, self.track_away, self.grid, self.cart, self.path],
+            base_transform,
             objects: vec![self.grid, self.cart, self.path],
         })
     }
@@ -132,6 +160,7 @@ pub fn track_tess_path(
     let max_idx = segments.len() as f32;
     let mut follower = TrackFollower::new(segments, resolution);
 
+    // Generate vertices
     let total_lanes = lanes * 2 + 1;
     let mut total_rows = 0;
     while let Some(sample) = follower.next() {
@@ -146,26 +175,22 @@ pub fn track_tess_path(
         total_rows += 1;
     }
 
-
+    // Tesselate indices
     let mut indices = Vec::new();
     for row in 0..total_rows-1 {
         for col in 0..total_lanes-1 {
-            let idx = row * total_lanes + col;
-            indices.push(idx as u16);
-            indices.push((idx + 1) as u16);
-            indices.push((idx + total_lanes) as u16);
-            indices.push((idx + total_lanes + 1) as u16);
-            indices.push((idx + total_lanes) as u16);
-            indices.push((idx + 1) as u16);
+            let idx = (row * total_lanes + col) as u16;
+            let total_lanes = total_lanes as u16;
+
+            indices.push(idx);
+            indices.push(idx + 1);
+            indices.push(idx + total_lanes);
+
+            indices.push(idx + total_lanes + 1);
+            indices.push(idx + total_lanes);
+            indices.push(idx + 1);
         }
     }
-
-
-    //let mut indices = Vec::new();
-    //for i in (2..vertices.len() as u16).step_by(2) {
-        //indices.extend_from_slice(&[i - 2, i - 1, i]);
-        //indices.extend_from_slice(&[i + 1, i, i - 1]);
-    //}
 
     (vertices, indices)
 }
@@ -198,9 +223,25 @@ pub fn track_trace_away(
     }
 }
 
+#[derive(Debug, StructOpt)]
+#[structopt(name = "Twisty Beziers babey", about = "Beziers!")]
+struct Opt {
+    /// VR via OpenXR
+    #[structopt(short, long)]
+    vr: bool,
+
+    /// Wii balance board mode
+    #[structopt(short, long)]
+    wii: bool,
+
+    /// Attach yourself to the game and go weeeeee
+    #[structopt(short, long)]
+    motion: bool,
+}
+
 fn main() -> Result<()> {
-    let vr = std::env::args().skip(1).next().is_some();
-    launch::<MyApp>(vr, ())
+    let opt = Opt::from_args();
+    launch::<MyApp>(opt.vr, opt)
 }
 
 fn grid(size: i32, scale: f32, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {

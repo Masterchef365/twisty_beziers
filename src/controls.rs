@@ -47,7 +47,8 @@ impl TwoAxisControls for WiiBoardRealtime {
             if total > 0.0 {
                 let x = ((data.top_right + data.bottom_right) / total) * 2. - 1.;
                 let y = ((data.top_left + data.top_right) / total) * 2. - 1.;
-                return Ok((x, y));
+                //return Ok((x, y));
+                return Ok((y, x));
             }
         }
 
