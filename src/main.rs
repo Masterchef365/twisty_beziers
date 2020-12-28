@@ -20,7 +20,7 @@ struct MyApp {
     opt: Opt,
 }
 
-const X_SENSITIVITY: f32 = 0.1;
+const X_SENSITIVITY: f32 = 0.05;
 
 impl App for MyApp {
     const NAME: &'static str = "MyApp";
@@ -107,10 +107,14 @@ impl App for MyApp {
 
         // Update X position based on game input
         let (x, y) = self.controls.axes().expect("Input device error");
-        self.x_position += X_SENSITIVITY * x;
+        const DEADZONE: f32 = 0.2;
+        if x.abs() > DEADZONE {
+            let x = if x > 0. { x - DEADZONE } else { x + DEADZONE } / (1. - DEADZONE);
+            self.x_position += X_SENSITIVITY * x;
+        }
 
         // Update time (It's actually an index into the spline set but shhh)
-        self.time += 0.1 / sample.derivative.magnitude();
+        self.time += 0.08 / sample.derivative.magnitude();
         engine.update_time_value(self.time)?;
 
         // Determine transform for world
