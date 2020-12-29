@@ -7,6 +7,13 @@ pub trait TwoAxisControls {
     fn axes(&mut self) -> Result<(f32, f32)>;
 }
 
+pub struct Dummy;
+impl TwoAxisControls for Dummy {
+    fn axes(&mut self) -> Result<(f32, f32)> {
+        Ok((0., 0.))
+    }
+}
+
 pub struct GamepadAxes {
     gilrs: Gilrs,
     gamepad: GamepadId,

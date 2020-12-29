@@ -1,12 +1,12 @@
-use anyhow::Result;
+use anyhow::{Result, format_err};
 use klystron::{
     runtime_3d::{launch, App},
     DrawType, Engine, FramePacket, Object, Vertex, UNLIT_FRAG, UNLIT_VERT,
 };
-use nalgebra::{Matrix4, Point3, Vector3, Vector4};
-use twisty_beziers::track::{self, TrackControl, TrackFollower, TrackSample};
+use nalgebra::{Matrix4, Point3, Vector3};
 use structopt::StructOpt;
-use twisty_beziers::controls::{TwoAxisControls, GamepadAxes};
+use twisty_beziers::controls::{self, GamepadAxes, TwoAxisControls};
+use twisty_beziers::track::{self, TrackControl, TrackFollower, TrackSample};
 use wiiboard::WiiBoardRealtime;
 
 struct MyApp {
@@ -28,9 +28,10 @@ impl App for MyApp {
     type Args = Opt;
 
     fn new(engine: &mut dyn Engine, opt: Self::Args) -> Result<Self> {
-        let controls: Box<dyn TwoAxisControls> = match opt.wii {
-            true => Box::new(WiiBoardRealtime::new(5, 5)),
-            false => Box::new(GamepadAxes::new()?),
+        let controls: Box<dyn TwoAxisControls> = match opt.input {
+            InputDevice::WiiBoard => Box::new(WiiBoardRealtime::new(5, 5)),
+            InputDevice::GamePad => Box::new(GamepadAxes::new()?),
+            InputDevice::Dummy => Box::new(controls::Dummy),
         };
 
         let lines = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Lines)?;
@@ -47,17 +48,29 @@ impl App for MyApp {
 
         // Track
         let ctrlps = vec![
-            TrackControl::new(Point3::new(0., 0., 0.), Vector3::new(10., 0., 0.), 0.),
-            TrackControl::new(Point3::new(20., 10., 0.), Vector3::new(10., 0., 0.), 0.),
-            TrackControl::new(Point3::new(40., 20., 0.), Vector3::new(10., 0., 0.), std::f32::consts::PI),
-            TrackControl::new(Point3::new(60., 00., 0.), Vector3::new(0., -10., 0.), std::f32::consts::PI),
-            TrackControl::new(Point3::new(00., -20., 0.), Vector3::new(-10., 0., 0.), std::f32::consts::PI),
-            TrackControl::new(Point3::new(0., 0., 0.), Vector3::new(10., 0., 0.), 0.),
+            TrackControl::new(Point3::new(0., 0., 0.), Vector3::new(20., 0., 0.), 0.),
+            TrackControl::new(Point3::new(40., 20., 0.), Vector3::new(20., 0., 0.), 0.),
+            TrackControl::new(
+                Point3::new(80., 40., 0.),
+                Vector3::new(20., 0., 0.),
+                std::f32::consts::PI,
+            ),
+            TrackControl::new(
+                Point3::new(140., 00., 0.),
+                Vector3::new(0., -20., 0.),
+                std::f32::consts::PI,
+            ),
+            TrackControl::new(
+                Point3::new(00., -40., 0.),
+                Vector3::new(-20., 0., 0.),
+                std::f32::consts::PI,
+            ),
+            TrackControl::new(Point3::new(0., 0., 0.), Vector3::new(20., 0., 0.), 0.),
         ];
 
         // Cart
         let triangles = engine.add_material(UNLIT_VERT, UNLIT_FRAG, DrawType::Triangles)?;
-        let (vertices, indices) = rainbow_cube();
+        let (vertices, indices) = carpet(2., 3.);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
         let cart = Object {
@@ -67,13 +80,13 @@ impl App for MyApp {
         };
 
         let floor = engine.add_material(
-            UNLIT_VERT, 
-            &std::fs::read("./shaders/floor.frag.spv")?, 
-            DrawType::Triangles
+            UNLIT_VERT,
+            &std::fs::read("./shaders/floor.frag.spv")?,
+            DrawType::Triangles,
         )?;
 
         // Path
-        let (vertices, mut indices) = track_tess_path(&ctrlps, 4, 3.0, 0.5);
+        let (vertices, mut indices) = track_tess_path(&ctrlps, 8, 8.0, 0.5);
         double_side(&mut indices);
         let mesh = engine.add_mesh(&vertices, &indices)?;
 
@@ -106,7 +119,7 @@ impl App for MyApp {
         };
 
         // Update X position based on game input
-        let (x, y) = self.controls.axes().expect("Input device error");
+        let (x, _y) = self.controls.axes().expect("Input device error");
         const DEADZONE: f32 = 0.2;
         if x.abs() > DEADZONE {
             let x = if x > 0. { x - DEADZONE } else { x + DEADZONE } / (1. - DEADZONE);
@@ -120,13 +133,11 @@ impl App for MyApp {
         // Determine transform for world
         let quat = sample.quaternion(&Vector3::x_axis());
         let cart_position = sample.position + road_norm(&sample) * self.x_position;
-        let base_transform = 
+        let base_transform =
             Matrix4::new_translation(&cart_position.coords) * quat.to_homogeneous();
 
         // Move the cart
-        let size = 0.08;
-        self.cart.transform =
-            base_transform * Matrix4::from_diagonal(&Vector4::new(size, size, size, 1.));
+        self.cart.transform = base_transform;
 
         // Move the whole scene
         let base_transform = match self.opt.motion {
@@ -181,8 +192,8 @@ pub fn track_tess_path(
 
     // Tesselate indices
     let mut indices = Vec::new();
-    for row in 0..total_rows-1 {
-        for col in 0..total_lanes-1 {
+    for row in 0..total_rows - 1 {
+        for col in 0..total_lanes - 1 {
             let idx = (row * total_lanes + col) as u16;
             let total_lanes = total_lanes as u16;
 
@@ -227,6 +238,27 @@ pub fn track_trace_away(
     }
 }
 
+#[derive(Debug)]
+enum InputDevice {
+    Dummy,
+    WiiBoard,
+    GamePad,
+}
+
+use std::str::FromStr;
+
+impl FromStr for InputDevice {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "dummy" => Ok(Self::Dummy),
+            "wii" => Ok(Self::WiiBoard),
+            "pad" => Ok(Self::GamePad),
+            _ => Err(format_err!("Unrecognized input device {}", s)),
+        }
+    }
+}
+
 #[derive(Debug, StructOpt)]
 #[structopt(name = "Twisty Beziers babey", about = "Beziers!")]
 struct Opt {
@@ -235,8 +267,8 @@ struct Opt {
     vr: bool,
 
     /// Wii balance board mode
-    #[structopt(short, long)]
-    wii: bool,
+    #[structopt(short, long, default_value = "dummy")]
+    input: InputDevice,
 
     /// Attach yourself to the game and go weeeeee
     #[structopt(short, long)]
@@ -268,14 +300,18 @@ fn grid(size: i32, scale: f32, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
     (vertices, indices)
 }
 
+#[allow(unused)]
 fn rainbow_cube() -> (Vec<Vertex>, Vec<u16>) {
     let vertices = vec![
         Vertex::new([-1.0, -1.0, -1.0], [0.0, 1.0, 1.0]),
         Vertex::new([1.0, -1.0, -1.0], [1.0, 0.0, 1.0]),
+
         Vertex::new([1.0, 1.0, -1.0], [1.0, 1.0, 0.0]),
         Vertex::new([-1.0, 1.0, -1.0], [0.0, 1.0, 1.0]),
+
         Vertex::new([-1.0, -1.0, 1.0], [1.0, 0.0, 1.0]),
         Vertex::new([1.0, -1.0, 1.0], [1.0, 1.0, 0.0]),
+
         Vertex::new([1.0, 1.0, 1.0], [0.0, 1.0, 1.0]),
         Vertex::new([-1.0, 1.0, 1.0], [1.0, 0.0, 1.0]),
     ];
@@ -285,5 +321,28 @@ fn rainbow_cube() -> (Vec<Vertex>, Vec<u16>) {
         0, 5, 4, 1, 5, 0,
     ];
 
+    (vertices, indices)
+}
+
+fn carpet(width: f32, length: f32) -> (Vec<Vertex>, Vec<u16>) {
+    const WII_BOARD_HEIGHT: f32 = 0.09652;
+    let height = WII_BOARD_HEIGHT;
+    let vertices = vec![
+        Vertex::new([-length, 0., -width], [0., 0., 0.]),
+        Vertex::new([length, 0., -width], [1., 0., 0.]),
+
+        Vertex::new([length, height, -width], [1., 0., 0.]),
+        Vertex::new([-length, height, -width], [0., 0., 0.]),
+
+        Vertex::new([-length, 0., width], [0., 1., 0.]),
+        Vertex::new([length, 0., width], [1., 1., 0.]),
+
+        Vertex::new([length, height, width], [1., 1., 0.]),
+        Vertex::new([-length, height, width], [0., 1., 0.]),
+    ];
+    let indices = vec![
+        3, 1, 0, 2, 1, 3, 2, 5, 1, 6, 5, 2, 6, 4, 5, 7, 4, 6, 7, 0, 4, 3, 0, 7, 7, 2, 3, 6, 2, 7,
+        0, 5, 4, 1, 5, 0,
+    ];
     (vertices, indices)
 }

@@ -43,11 +43,16 @@ impl TrackSample {
     }
 }
 
+// Smoothe step from [0..1] to [0..1]
+fn smooth_step(i: f32) -> f32 {
+    i * i * (3. - 2. * i)
+}
+
 /// Sample between two track controls
 pub fn sample(begin: &TrackControl, end: &TrackControl, i: f32) -> TrackSample {
     let position = spline(begin, end, i);
     let derivative = spline_deriv(begin, end, i);
-    let angle = lerp(begin.angle, end.angle, i);
+    let angle = lerp(begin.angle, end.angle, smooth_step(i));
     TrackSample {
         position,
         derivative,
